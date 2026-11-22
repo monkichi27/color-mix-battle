@@ -1,0 +1,13 @@
+{
+  "name": "color-mix-battle",
+  "version": "1.0.0",
+  "description": "เกมแข่งผสมสีออนไลน์กับเพื่อน",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/room-core.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

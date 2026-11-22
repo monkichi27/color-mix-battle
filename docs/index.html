@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Color Mix Battle</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fff8ef;
+    --card: #ffffff;
+    --ink: #2b2240;
+    --muted: #8a7f99;
+    --line: #eadfce;
+    --accent: #ff5d73;
+    --accent-2: #5b6cff;
+    --good: #19b37a;
+    --shadow: 0 6px 0 rgba(43, 34, 64, .12);
+    --radius: 22px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; }
+  body {
+    font-family: 'Mitr', system-ui, sans-serif;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 8% 12%, #ffd6e0 0 70px, transparent 71px),
+      radial-gradient(circle at 92% 8%, #d7f0ff 0 90px, transparent 91px),
+      radial-gradient(circle at 95% 85%, #fff1b8 0 80px, transparent 81px),
+      radial-gradient(circle at 4% 92%, #d9f7e5 0 70px, transparent 71px);
+    background-attachment: fixed;
+    color: var(--ink);
+    min-height: 100vh;
+    touch-action: manipulation;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; }
+  .screen { display: none; }
+  .screen.on { display: block; animation: pop .25s ease; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  h1.logo { font-size: clamp(34px, 9vw, 56px); line-height: 1; margin: 28px 0 6px; text-align: center; letter-spacing: -1px; }
+  h1.logo span { display: inline-block; }
+  .sub { text-align: center; color: var(--muted); margin: 0 0 22px; }
+  .card { background: var(--card); border: 2px solid var(--ink); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 20px; }
+  label.f { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+  input[type=text], select {
+    width: 100%; font: inherit; font-size: 18px; padding: 12px 14px; border-radius: 14px;
+    border: 2px solid var(--ink); background: #fff; color: var(--ink); outline: none;
+  }
+  input[type=text]:focus, select:focus { border-color: var(--accent-2); }
+  input.code { text-transform: uppercase; letter-spacing: 6px; text-align: center; font-weight: 700; font-size: 24px; }
+  .btn {
+    font: inherit; font-weight: 600; font-size: 18px; cursor: pointer; user-select: none;
+    border: 2px solid var(--ink); border-radius: 16px; padding: 12px 18px; background: #fff; color: var(--ink);
+    box-shadow: 0 4px 0 var(--ink); transition: transform .06s, box-shadow .06s; width: 100%;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.blue { background: var(--accent-2); color: #fff; }
+  .btn.good { background: var(--good); color: #fff; }
+  .btn.small { font-size: 15px; padding: 8px 12px; border-radius: 12px; width: auto; box-shadow: 0 3px 0 var(--ink); }
+  .btn.mid { display: block; margin-left: auto; margin-right: auto; }
+  .btn:disabled { opacity: .45; pointer-events: none; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row > * { flex: 1; }
+  .or { text-align: center; color: var(--muted); margin: 14px 0; font-size: 14px; }
+  .stack > * + * { margin-top: 12px; }
+  .muted { color: var(--muted); }
+  .center { text-align: center; }
+
+  /* lobby */
+  .roomcode { font-size: 52px; font-weight: 700; letter-spacing: 10px; text-align: center; margin: 4px 0 2px; }
+  .plist { list-style: none; padding: 0; margin: 0; }
+  .plist li { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 2px dashed var(--line); }
+  .plist li:last-child { border-bottom: 0; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--ink); display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
+  .pname { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1.5px solid var(--ink); background: #fff1b8; }
+  .tag.me { background: #d7f0ff; }
+  .off { opacity: .4; }
+  .kick { border: 0; background: none; font-size: 18px; cursor: pointer; color: var(--muted); }
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  @media (max-width: 520px) { .settings-grid { grid-template-columns: 1fr; } }
+
+  /* mixing */
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .pill { background: #fff; border: 2px solid var(--ink); border-radius: 999px; padding: 4px 14px; font-weight: 600; }
+  .timer { height: 14px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; margin-bottom: 14px; }
+  .timer > i { display: block; height: 100%; width: 100%; background: var(--good); transition: background .3s; }
+  .timer.warn > i { background: #ffb020; }
+  .timer.danger > i { background: var(--accent); }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .swatch-box { text-align: center; }
+  .swatch-box .lbl { font-weight: 600; margin-bottom: 6px; }
+  .swatch {
+    aspect-ratio: 1; width: 100%; max-width: 240px; margin: 0 auto; border-radius: 50%;
+    border: 3px solid var(--ink); box-shadow: var(--shadow); transition: background-color .25s;
+    display: grid; place-items: center; color: var(--muted); font-size: 14px;
+  }
+  .swatch.empty { background: repeating-conic-gradient(#f3ece2 0 25%, #fff 0 50%) 50% / 24px 24px; }
+  .paints { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .paint { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .paint .blob {
+    width: 100%; aspect-ratio: 1; border-radius: 50% 50% 46% 54% / 55% 48% 52% 45%; border: 3px solid var(--ink);
+    cursor: pointer; box-shadow: 0 4px 0 var(--ink); transition: transform .06s, box-shadow .06s; position: relative;
+  }
+  .paint .blob:active { transform: translateY(3px) scale(.96); box-shadow: 0 1px 0 var(--ink); }
+  .paint .blob::after { content: '+'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; font-weight: 700; color: rgba(255,255,255,.85); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .paint .cnt { position: absolute; top: -8px; right: -6px; min-width: 28px; height: 28px; border-radius: 999px; background: var(--ink); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 14px; padding: 0 6px; }
+  .paint .cnt.zero { display: none; }
+  .paint .pn { font-size: 14px; }
+  .paint .minus { border: 2px solid var(--ink); background: #fff; border-radius: 10px; width: 100%; font: inherit; font-weight: 700; cursor: pointer; padding: 2px 0; }
+  .paint .minus:disabled { opacity: .3; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px; margin-top: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; justify-content: center; }
+  .chip { font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1.5px solid var(--ink); background: #fff; }
+  .chip.done { background: #d9f7e5; }
+  .chip.done::before { content: '✓ '; }
+  .chip.off { opacity: .4; }
+  .waiting { position: relative; }
+  .sent-banner { display: none; text-align: center; background: #d9f7e5; border: 2px solid var(--ink); border-radius: 16px; padding: 12px; margin-top: 14px; font-weight: 600; }
+  .locked .paints, .locked .actions { opacity: .35; pointer-events: none; }
+  .locked .sent-banner { display: block; }
+  .dropcount { text-align: center; color: var(--muted); font-size: 14px; margin-top: 6px; }
+
+  /* reveal */
+  .target-big { display: flex; align-items: center; gap: 16px; }
+  .target-big .swatch { width: 110px; max-width: 110px; flex: none; }
+  .recipe { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .drop { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; background: #fff; border: 1.5px solid var(--line); border-radius: 999px; padding: 2px 8px 2px 3px; }
+  .drop i { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink); display: inline-block; }
+  .results { list-style: none; padding: 0; margin: 0; }
+  .results li { display: grid; grid-template-columns: 38px 64px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 2px dashed var(--line); }
+  .results li:last-child { border-bottom: 0; }
+  .rank { font-size: 22px; font-weight: 700; text-align: center; }
+  .mini { width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--ink); position: relative; overflow: hidden; }
+  .mini .half { position: absolute; inset: 0 50% 0 0; }
+  .rname { font-weight: 600; }
+  .pct { font-size: 26px; font-weight: 700; text-align: right; line-height: 1; }
+  .pts { font-size: 13px; color: var(--good); text-align: right; font-weight: 600; margin-top: 4px; }
+  .bar { height: 8px; background: #f3ece2; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--accent-2); width: 0; transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+  .perfect { color: var(--accent); font-size: 12px; font-weight: 700; }
+  .standings { list-style: none; padding: 0; margin: 0; }
+  .standings li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 2px dashed var(--line); }
+  .standings li:last-child { border-bottom: 0; }
+  .standings .sc { font-weight: 700; font-size: 20px; }
+
+  /* final */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin: 20px 0 6px; }
+  .pod { text-align: center; width: 31%; max-width: 170px; }
+  .pod .stand { border: 2px solid var(--ink); border-radius: 14px 14px 0 0; display: grid; place-items: center; font-size: 34px; font-weight: 700; color: #fff; box-shadow: var(--shadow); }
+  .pod.p1 .stand { height: 150px; background: #ffc531; }
+  .pod.p2 .stand { height: 110px; background: #b9c3d6; }
+  .pod.p3 .stand { height: 80px; background: #e5a06c; }
+  .pod .who { font-weight: 700; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pod .s { color: var(--muted); font-size: 14px; margin-bottom: 6px; }
+  .crown { font-size: 34px; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; visibility: hidden; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 14px; transition: transform .25s, opacity .25s, visibility .25s; z-index: 50; max-width: 90vw; text-align: center; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; }
+  .conn { position: fixed; top: 10px; right: 10px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--accent); color: #fff; display: none; z-index: 40; }
+  .conn.show { display: block; }
+  .help { font-size: 14px; color: var(--muted); line-height: 1.6; }
+  .help b { color: var(--ink); }
+  .confetti { position: fixed; top: -20px; width: 10px; height: 16px; z-index: 60; pointer-events: none; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+</style>
+</head>
+<body>
+<div class="conn" id="conn">กำลังเชื่อมต่อ…</div>
+<div class="toast" id="toast"></div>
+
+<div class="wrap">
+  <!-- HOME -->
+  <section class="screen on" id="s-home">
+    <h1 class="logo" id="logo">Color Mix Battle</h1>
+    <p class="sub">แข่งผสมสีให้ตรงโจทย์ ใครใกล้เคียงสุดได้แต้มเยอะสุด!</p>
+    <div class="card stack">
+      <div>
+        <label class="f" for="name">ชื่อของคุณ</label>
+        <input type="text" id="name" maxlength="16" placeholder="เช่น มิ้นท์" autocomplete="off">
+      </div>
+      <button class="btn primary" id="btn-create">🎨 สร้างห้องใหม่</button>
+      <div class="or">— หรือเข้าห้องเพื่อน —</div>
+      <div class="row">
+        <input type="text" class="code" id="joincode" maxlength="4" placeholder="รหัส" autocomplete="off">
+        <button class="btn blue" id="btn-join" style="flex:.8">เข้าห้อง</button>
+      </div>
+    </div>
+    <div class="card help">
+      <b>วิธีเล่น</b><br>
+      1. คนหนึ่งสร้างห้อง แล้วส่งรหัสหรือลิงก์ให้เพื่อน<br>
+      2. แต่ละรอบจะมี <b>สีโจทย์</b> ให้ทุกคนหยดสี แดง เหลือง น้ำเงิน ขาว ดำ ผสมให้เหมือนที่สุด<br>
+      3. หมดเวลาหรือส่งครบทุกคนแล้วจะเฉลย <b>% ความใกล้เคียง</b><br>
+      4. อันดับ 1 ได้ 10 แต้ม, 2 ได้ 7, 3 ได้ 5… ถ้าได้ 97% ขึ้นไปรับโบนัส +3!
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section class="screen" id="s-lobby">
+    <div class="card center">
+      <div class="muted">รหัสห้อง</div>
+      <div class="roomcode" id="lobby-code">----</div>
+      <div class="row" style="max-width:380px;margin:8px auto 0">
+        <button class="btn small" id="btn-copy">🔗 คัดลอกลิงก์ชวนเพื่อน</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>ผู้เล่น (<span id="pcount">0</span>)</h2>
+      <ul class="plist" id="plist"></ul>
+    </div>
+    <div class="card">
+      <h2>ตั้งค่าเกม</h2>
+      <div class="settings-grid">
+        <div><label class="f">จำนวนรอบ</label>
+          <select id="set-rounds">
+            <option value="3">3 รอบ</option><option value="5">5 รอบ</option><option value="7">7 รอบ</option>
+            <option value="10">10 รอบ</option><option value="15">15 รอบ</option><option value="0">ไม่จำกัด</option>
+          </select></div>
+        <div><label class="f">เวลาต่อรอบ</label>
+          <select id="set-time">
+            <option value="20">20 วินาที</option><option value="30">30 วินาที</option><option value="45">45 วินาที</option>
+            <option value="60">60 วินาที</option><option value="90">90 วินาที</option><option value="120">2 นาที</option>
+            <option value="0">ไม่จับเวลา</option>
+          </select></div>
+        <div><label class="f">ความยาก</label>
+          <select id="set-diff">
+            <option value="easy">ง่าย (ผสม 2 สี)</option><option value="normal">ปานกลาง (2–3 สี)</option><option value="hard">ยาก (3–4 สี)</option>
+          </select></div>
+      </div>
+      <p class="muted" id="set-note" style="font-size:14px;margin:10px 0 0"></p>
+    </div>
+    <div class="card help" id="host-note" style="display:none">📌 <b>ห้องนี้อยู่บนเครื่องของคุณ</b> ระหว่างเล่นอย่าปิดแท็บหรือสลับไปแอปอื่นนาน ๆ เพื่อนจะหลุด (ถ้าเผลอรีเฟรช ห้องและคะแนนยังอยู่)</div>
+    <div class="stack">
+      <button class="btn primary" id="btn-start">เริ่มเกม!</button>
+      <p class="center muted" id="wait-host">รอโฮสต์กดเริ่มเกม…</p>
+      <button class="btn small mid" id="btn-leave">ออกจากห้อง</button>
+    </div>
+  </section>
+
+  <!-- MIXING -->
+  <section class="screen" id="s-mix">
+    <div class="topbar">
+      <span class="pill" id="mix-round">รอบ 1</span>
+      <span class="pill" id="mix-time">--</span>
+    </div>
+    <div class="timer" id="timerbar"><i></i></div>
+    <div class="compare">
+      <div class="swatch-box"><div class="lbl">🎯 สีโจทย์</div><div class="swatch" id="sw-target"></div></div>
+      <div class="swatch-box"><div class="lbl">🖌️ สีของคุณ</div><div class="swatch empty" id="sw-mine">ยังไม่มีสี</div></div>
+    </div>
+    <div id="mixarea">
+      <div class="paints" id="paints"></div>
+      <div class="dropcount" id="dropcount">แตะที่สีเพื่อหยดลงจาน</div>
+      <div class="actions">
+        <button class="btn small" id="btn-undo">↩︎ ย้อน</button>
+        <button class="btn small" id="btn-clear">🗑 ล้าง</button>
+        <button class="btn good" id="btn-submit">ส่งคำตอบ ✓</button>
+      </div>
+      <div class="sent-banner">ส่งแล้ว! รอเพื่อนคนอื่น… <button class="btn small" id="btn-unsubmit" style="margin-left:8px">แก้ไข</button></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="center" style="margin-top:14px"><button class="btn small" id="btn-force" style="display:none">⏩ เฉลยเลย (โฮสต์)</button></div>
+  </section>
+
+  <!-- REVEAL -->
+  <section class="screen" id="s-reveal">
+    <div class="topbar"><span class="pill" id="rev-round">ผลรอบ 1</span></div>
+    <div class="card">
+      <div class="target-big">
+        <div class="swatch" id="rev-target"></div>
+        <div><div style="font-weight:600;margin-bottom:6px">🎯 สีโจทย์ — สูตรเฉลย</div><div class="recipe" id="rev-recipe"></div></div>
+      </div>
+    </div>
+    <div class="card"><h2>ใครใกล้เคียงสุด?</h2><ul class="results" id="results"></ul></div>
+    <div class="card"><h2>คะแนนรวม</h2><ul class="standings" id="standings"></ul></div>
+    <div class="stack">
+      <button class="btn primary" id="btn-next">รอบต่อไป ➜</button>
+      <button class="btn small mid" id="btn-end">จบเกมเลย</button>
+      <p class="center muted" id="rev-wait">รอโฮสต์ไปรอบต่อไป…</p>
+    </div>
+  </section>
+
+  <!-- FINAL -->
+  <section class="screen" id="s-final">
+    <h1 class="logo" style="font-size:40px">🏆 จบเกม!</h1>
+    <div class="podium" id="podium"></div>
+    <div class="card"><h2>อันดับทั้งหมด</h2><ul class="standings" id="final-list"></ul></div>
+    <div class="stack">
+      <button class="btn primary" id="btn-again">เล่นอีกรอบ (ผู้เล่นเดิม)</button>
+      <button class="btn small mid" id="btn-tolobby">กลับห้องรอ / เปลี่ยนการตั้งค่า</button>
+      <p class="center muted" id="final-wait">รอโฮสต์เริ่มเกมใหม่…</p>
+      <button class="btn small mid" id="btn-leave2">ออกจากห้อง</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="color-engine.js"></script>
+<script src="room-core.js"></script>
+<script>
+(() => {
+  const E = window.ColorEngine;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const hex = E.toHex;
+  const PIG = Object.fromEntries(E.PIGMENTS.map(p => [p.id, p]));
+  const AV_COLORS = ['#ff5d73', '#5b6cff', '#19b37a', '#ffb020', '#a35bff', '#00a6c8', '#ff7a3d', '#e04da3', '#4f8a2b', '#7a5c3d', '#2b9c9c', '#c2410c'];
+
+  // colorful logo
+  const LOGO_COLORS = ['#ff5d73', '#ffb020', '#19b37a', '#5b6cff', '#a35bff'];
+  $('logo').innerHTML = [...'Color Mix Battle'].map((c, i) => c === ' ' ? ' ' : `<span style="color:${LOGO_COLORS[i % 5]}">${c}</span>`).join('');
+
+  // ---------- identity ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } },
+    set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+  };
+  let playerId = store.get('cmb.pid');
+  if (!playerId) { playerId = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('cmb.pid', playerId); }
+  $('name').value = store.get('cmb.name', '');
+  const urlRoom = new URLSearchParams(location.search).get('room');
+  if (urlRoom) $('joincode').value = urlRoom.toUpperCase().slice(0, 4);
+
+  // ---------- networking: PeerJS (WebRTC). The host's browser runs the room. ----------
+  const PEER_PREFIX = 'colormixbattle-v1-';
+  const peerIdOf = code => PEER_PREFIX + code;
+  const NET_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected'];
+  let state = null, peer = null, core = null, conn = null, mode = null; // mode: 'host' | 'guest'
+  const conns = new Map(); // host: playerId -> DataConnection
+  let guestRetry = null, everConnected = false, lastHostMsg = 0, wakeLock = null;
+
+  function setConn(on, text) { $('conn').textContent = text || 'กำลังเชื่อมต่อ…'; $('conn').classList.toggle('show', !!on); }
+  function newCode() {
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    return Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+  }
+  function loadSaved() {
+    try {
+      const s = JSON.parse(store.get('cmb.hostRoom', 'null'));
+      if (s && Date.now() - s.savedAt < 6 * 3600 * 1000) return s.room;
+    } catch {}
+    return null;
+  }
+  function persist() {
+    if (!core) return;
+    if (core.closed) { store.set('cmb.hostRoom', null); return; }
+    store.set('cmb.hostRoom', JSON.stringify({ savedAt: Date.now(), room: core.serialize() }));
+  }
+  function teardown() {
+    clearTimeout(guestRetry);
+    if (core) core.destroy();
+    core = null;
+    for (const c of conns.values()) { try { c.close(); } catch {} }
+    conns.clear();
+    if (conn) { const c = conn; conn = null; try { c.close(); } catch {} }
+    if (peer) { try { peer.destroy(); } catch {} }
+    peer = null; mode = null;
+    setConn(false);
+  }
+  function goHome(msg) {
+    if (mode === 'host') store.set('cmb.hostRoom', null);
+    teardown();
+    store.set('cmb.session', null);
+    state = null;
+    if (msg) toast(msg);
+    show('home');
+    history.replaceState(null, '', location.pathname);
+  }
+  function keepBrokerAlive() {
+    peer.on('disconnected', () => {
+      setTimeout(() => { if (peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch {} } }, 1500);
+    });
+  }
+  async function requestWakeLock() {
+    try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (mode === 'host') requestWakeLock(); });
+
+  // ----- host -----
+  function hostRoom(name, restoring, attempt = 0) {
+    teardown();
+    mode = 'host';
+    const saved = restoring ? loadSaved() : null;
+    if (restoring && !saved) return goHome();
+    const code = saved ? saved.code : newCode();
+    setConn(true, restoring ? 'กำลังเปิดห้องเดิม…' : 'กำลังเปิดห้อง…');
+    const p = peer = new Peer(peerIdOf(code));
+    keepBrokerAlive();
+    p.on('open', () => {
+      if (peer !== p) return;
+      setConn(false);
+      core = RoomCore.create({ code, hostId: playerId, engine: E, emit: hostEmit, onChange: persist }, saved);
+      store.set('cmb.session', JSON.stringify({ role: 'host', code }));
+      core.attach(playerId, name);
+      requestWakeLock();
+    });
+    p.on('connection', wireGuest);
+    p.on('error', err => {
+      if (peer !== p) return;
+      if (err.type === 'unavailable-id') {
+        // fresh room: code clash → pick another. restored room: broker still holds the old id for a bit → retry
+        if (!restoring && attempt < 5) return hostRoom(name, false, attempt + 1);
+        if (restoring && attempt < 15) { setConn(true, 'กำลังเปิดห้องเดิม… (รอสักครู่)'); try { p.destroy(); } catch {} ; return setTimeout(() => mode === 'host' && hostRoom(name, true, attempt + 1), 2000); }
+        return goHome('เปิดห้องไม่สำเร็จ ลองสร้างห้องใหม่');
+      }
+      if (NET_ERRORS.includes(err.type)) setConn(true, 'เน็ตมีปัญหา กำลังเชื่อมต่อใหม่…');
+      else if (err.type === 'browser-incompatible') goHome('เบราว์เซอร์นี้ไม่รองรับ ลองใช้ Chrome หรือ Safari');
+    });
+  }
+  function hostEmit(pid, msg) {
+    if (pid === playerId) { setTimeout(() => onMessage(msg)); return; }
+    const c = conns.get(pid);
+    if (c && c.open) { try { c.send(msg); } catch {} }
+    if (msg.type === 'kicked' && c) setTimeout(() => { try { c.close(); } catch {} }, 500);
+  }
+  function wireGuest(c) {
+    c.__last = Date.now();
+    c.on('data', msg => {
+      c.__last = Date.now();
+      if (!core || !msg || typeof msg !== 'object') return;
+      if (msg.type === 'pong') return;
+      if (msg.type === 'join') {
+        const pid = String(msg.playerId || '').slice(0, 40);
+        if (!pid || pid === playerId) return;
+        const old = conns.get(pid);
+        if (old && old !== c) { old.__replaced = true; try { old.close(); } catch {} }
+        c.__pid = pid;
+        conns.set(pid, c);
+        const err = core.attach(pid, msg.name);
+        if (err) { try { c.send({ type: 'error', message: err, fatal: true }); } catch {} ; conns.delete(pid); c.__pid = null; }
+        return;
+      }
+      if (c.__pid && conns.get(c.__pid) === c) core.handle(c.__pid, msg);
+    });
+    c.on('close', () => dropGuest(c));
+    c.on('error', () => {});
+  }
+  function dropGuest(c) {
+    if (c.__pid && conns.get(c.__pid) === c) {
+      conns.delete(c.__pid);
+      if (core) core.detach(c.__pid);
+    }
+  }
+  setInterval(() => { // heartbeat: host pings guests; guests watch for silence
+    const now = Date.now();
+    if (mode === 'host') {
+      for (const c of [...conns.values()]) {
+        if (now - c.__last > 15000) { dropGuest(c); try { c.close(); } catch {} ; continue; }
+        if (c.open) { try { c.send({ type: 'ping' }); } catch {} }
+      }
+    } else if (mode === 'guest' && conn && conn.open && now - lastHostMsg > 15000) {
+      setConn(true, 'ไม่ได้ยินเสียงโฮสต์ กำลังเชื่อมต่อใหม่…');
+      const s = JSON.parse(store.get('cmb.session', 'null') || 'null');
+      if (s) scheduleGuestRetry(s.code, myName(), 0);
+    }
+  }, 4000);
+
+  // ----- guest -----
+  function joinRoom(code, name) {
+    teardown();
+    mode = 'guest';
+    everConnected = false;
+    store.set('cmb.session', JSON.stringify({ role: 'guest', code }));
+    setConn(true, `กำลังเข้าห้อง ${code}…`);
+    const p = peer = new Peer();
+    keepBrokerAlive();
+    p.on('open', () => { if (peer === p) connectToHost(code, name); });
+    p.on('error', err => {
+      if (peer !== p) return;
+      if (err.type === 'peer-unavailable') {
+        if (!everConnected) goHome(`ไม่พบห้อง ${code} (รหัสผิด หรือโฮสต์ปิดห้องแล้ว)`);
+        else { setConn(true, 'โฮสต์หลุด รอโฮสต์กลับมา…'); scheduleGuestRetry(code, name, 3000); }
+      } else if (NET_ERRORS.includes(err.type)) {
+        setConn(true, 'เน็ตหลุด กำลังเชื่อมต่อใหม่…');
+        scheduleGuestRetry(code, name, 2000);
+      } else if (err.type === 'browser-incompatible') goHome('เบราว์เซอร์นี้ไม่รองรับ ลองใช้ Chrome หรือ Safari');
+    });
+  }
+  function connectToHost(code, name) {
+    if (mode !== 'guest' || !peer || peer.destroyed) return;
+    if (peer.disconnected) { try { peer.reconnect(); } catch {} ; return scheduleGuestRetry(code, name, 1500); }
+    const c = conn = peer.connect(peerIdOf(code), { reliable: true });
+    let opened = false;
+    const openTimer = setTimeout(() => { if (!opened && conn === c) scheduleGuestRetry(code, name, 0); }, 12000);
+    c.on('open', () => {
+      opened = true; clearTimeout(openTimer);
+      everConnected = true; lastHostMsg = Date.now();
+      setConn(false);
+      c.send({ type: 'join', code, name, playerId });
+    });
+    c.on('data', m => {
+      lastHostMsg = Date.now();
+      if (!m || typeof m !== 'object') return;
+      if (m.type === 'ping') { try { c.send({ type: 'pong' }); } catch {} ; return; }
+      onMessage(m);
+    });
+    c.on('close', () => {
+      if (conn === c && mode === 'guest') { setConn(true, 'หลุดจากห้อง กำลังเชื่อมต่อใหม่…'); scheduleGuestRetry(code, name, 2000); }
+    });
+    c.on('error', () => {});
+  }
+  function scheduleGuestRetry(code, name, delay) {
+    clearTimeout(guestRetry);
+    guestRetry = setTimeout(() => {
+      if (mode !== 'guest') return;
+      if (conn) { const old = conn; conn = null; try { old.close(); } catch {} }
+      connectToHost(code, name);
+    }, delay);
+  }
+
+  function send(msg) {
+    msg.playerId = playerId;
+    if (mode === 'host' && core) setTimeout(() => core && core.handle(playerId, msg));
+    else if (mode === 'guest' && conn && conn.open) { try { conn.send(msg); } catch {} }
+  }
+  function myName() { return $('name').value.trim() || store.get('cmb.name', '') || 'ผู้เล่น'; }
+
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  function onMessage(m) {
+    if (m.type === 'error') { if (m.fatal) goHome(m.message); else toast(m.message); return; }
+    if (m.type === 'kicked') return goHome('คุณถูกเชิญออกจากห้อง');
+    if (m.type === 'closed') return goHome('โฮสต์ปิดห้องแล้ว');
+    if (m.type === 'left') { if (mode === 'host') setTimeout(() => goHome(), 400); else goHome(); return; }
+    if (m.type === 'state') {
+      const prev = state; state = m;
+      if (location.search !== `?room=${m.code}`) history.replaceState(null, '', `?room=${m.code}`);
+      render(prev);
+    }
+  }
+
+  function resume() {
+    let s = null;
+    try { s = JSON.parse(store.get('cmb.session', 'null')); } catch {}
+    if (!s) return;
+    if (urlRoom && urlRoom.toUpperCase() !== s.code) { store.set('cmb.session', null); return; } // opened a different invite link
+    if (s.role === 'host') hostRoom(myName(), true);
+    else joinRoom(s.code, myName());
+  }
+
+  // ---------- screens ----------
+  function show(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + name));
+    if (name === 'home' && location.search && !urlRoom) history.replaceState(null, '', location.pathname);
+  }
+  const isHost = () => state && state.hostId === state.you;
+  const avatarColor = id => AV_COLORS[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
+  const avatar = p => `<span class="avatar" style="background:${avatarColor(p.id)}">${esc([...p.name][0] || '?')}</span>`;
+  const recipeHTML = counts => {
+    const ids = E.PIGMENTS.map(p => p.id).filter(id => counts && counts[id]);
+    if (!ids.length) return '<span class="muted">ไม่ได้ผสมสี</span>';
+    return ids.map(id => `<span class="drop"><i style="background:${hex(PIG[id].rgb)}"></i>${PIG[id].name} ×${counts[id]}</span>`).join('');
+  };
+  const roundLabel = s => s.settings.rounds ? `รอบ ${s.round}/${s.settings.rounds}` : `รอบ ${s.round}`;
+
+  function render(prev) {
+    const s = state;
+    if (s.phase === 'lobby') renderLobby();
+    else if (s.phase === 'mixing') renderMix(prev);
+    else if (s.phase === 'reveal') renderReveal(prev);
+    else if (s.phase === 'final') renderFinal(prev);
+  }
+
+  // ---------- lobby ----------
+  function renderLobby() {
+    const s = state;
+    show('lobby');
+    $('lobby-code').textContent = s.code;
+    $('pcount').textContent = s.players.length;
+    $('plist').innerHTML = s.players.map(p => `
+      <li class="${p.connected ? '' : 'off'}">${avatar(p)}
+        <span class="pname">${esc(p.name)}</span>
+        ${p.id === s.hostId ? '<span class="tag">👑 โฮสต์</span>' : ''}
+        ${p.id === s.you ? '<span class="tag me">คุณ</span>' : ''}
+        ${isHost() && p.id !== s.you ? `<button class="kick" data-kick="${esc(p.id)}" title="เชิญออก">✕</button>` : ''}
+      </li>`).join('');
+    const host = isHost();
+    for (const [id, key] of [['set-rounds', 'rounds'], ['set-time', 'time'], ['set-diff', 'difficulty']]) {
+      $(id).value = String(s.settings[key]);
+      $(id).disabled = !host;
+    }
+    $('set-note').textContent = host ? 'คุณเป็นโฮสต์ เปลี่ยนการตั้งค่าได้' : 'โฮสต์เป็นคนตั้งค่า';
+    $('host-note').style.display = host ? '' : 'none';
+    $('btn-leave').textContent = $('btn-leave2').textContent = host ? 'ปิดห้อง' : 'ออกจากห้อง';
+    $('btn-start').style.display = host ? '' : 'none';
+    $('wait-host').style.display = host ? 'none' : '';
+    $('btn-start').textContent = s.players.length < 2 ? 'เริ่มเกม (เล่นคนเดียวก่อนก็ได้)' : `เริ่มเกม! (${s.players.length} คน)`;
+  }
+  $('plist').addEventListener('click', e => {
+    const id = e.target.dataset && e.target.dataset.kick;
+    if (id) send({ type: 'kick', id });
+  });
+  for (const id of ['set-rounds', 'set-time', 'set-diff']) {
+    $(id).addEventListener('change', () => send({ type: 'settings', settings: {
+      rounds: Number($('set-rounds').value), time: Number($('set-time').value), difficulty: $('set-diff').value } }));
+  }
+  $('btn-copy').onclick = async () => {
+    const link = `${location.origin}${location.pathname}?room=${state.code}`;
+    try {
+      if (navigator.share && /Mobi/i.test(navigator.userAgent)) await navigator.share({ title: 'มาแข่งผสมสีกัน!', text: `เข้าห้อง ${state.code}`, url: link });
+      else { await navigator.clipboard.writeText(link); toast('คัดลอกลิงก์แล้ว ส่งให้เพื่อนได้เลย!'); }
+    } catch { toast(link); }
+  };
+
+  // ---------- home actions ----------
+  function requireName() {
+    const n = $('name').value.trim();
+    if (!n) { toast('ใส่ชื่อก่อนนะ'); $('name').focus(); return null; }
+    store.set('cmb.name', n);
+    return n;
+  }
+  $('btn-create').onclick = () => { const n = requireName(); if (n) hostRoom(n, false); };
+  $('btn-join').onclick = () => {
+    const n = requireName(); if (!n) return;
+    const code = $('joincode').value.trim().toUpperCase();
+    if (code.length !== 4) return toast('รหัสห้องมี 4 ตัวอักษร');
+    joinRoom(code, n);
+  };
+  $('joincode').addEventListener('keydown', e => { if (e.key === 'Enter') $('btn-join').click(); });
+  $('btn-start').onclick = () => send({ type: 'start' });
+  $('btn-leave').onclick = $('btn-leave2').onclick = () => {
+    if (mode === 'host') { if (confirmLeave()) send({ type: 'leave' }); }
+    else { send({ type: 'leave' }); setTimeout(() => goHome(), 300); }
+  };
+  function confirmLeave() {
+    const b = $('btn-leave').dataset.armed || $('btn-leave2').dataset.armed;
+    if (b) return true;
+    toast('กดอีกครั้งเพื่อปิดห้อง (เพื่อนทุกคนจะออกจากห้อง)');
+    $('btn-leave').dataset.armed = $('btn-leave2').dataset.armed = '1';
+    setTimeout(() => { delete $('btn-leave').dataset.armed; delete $('btn-leave2').dataset.armed; }, 3000);
+    return false;
+  }
+
+  // ---------- mixing ----------
+  let counts = {}, history_ = [], mixKey = null, submitted = false, deadlineAt = null, totalMs = 0, draftT = null;
+  $('paints').innerHTML = E.PIGMENTS.map(p => `
+    <div class="paint" data-id="${p.id}">
+      <div class="blob" style="background:${hex(p.rgb)}"><span class="cnt zero">0</span></div>
+      <span class="pn">${p.name}</span>
+      <button class="minus" disabled>−</button>
+    </div>`).join('');
+  document.querySelectorAll('.paint').forEach(el => {
+    const id = el.dataset.id;
+    el.querySelector('.blob').onclick = () => change(id, +1);
+    el.querySelector('.minus').onclick = () => change(id, -1);
+  });
+  function change(id, d) {
+    if (submitted) return;
+    const v = (counts[id] || 0) + d;
+    if (v < 0 || v > 60) return;
+    history_.push({ ...counts });
+    counts[id] = v; if (!v) delete counts[id];
+    updateMix(); queueDraft();
+  }
+  $('btn-undo').onclick = () => { if (submitted || !history_.length) return; counts = history_.pop(); updateMix(); queueDraft(); };
+  $('btn-clear').onclick = () => { if (submitted || !Object.keys(counts).length) return; history_.push({ ...counts }); counts = {}; updateMix(); queueDraft(); };
+  $('btn-submit').onclick = () => {
+    if (!Object.keys(counts).length) return toast('ยังไม่ได้หยดสีเลย!');
+    submitted = true; send({ type: 'submit', counts }); updateLock();
+  };
+  $('btn-unsubmit').onclick = () => { submitted = false; send({ type: 'unsubmit' }); updateLock(); };
+  $('btn-force').onclick = () => send({ type: 'forceReveal' });
+  function queueDraft() { clearTimeout(draftT); draftT = setTimeout(() => send({ type: 'draft', counts }), 150); }
+
+  function updateMix() {
+    const rgb = E.mix(counts);
+    const sw = $('sw-mine');
+    if (rgb) { sw.classList.remove('empty'); sw.style.backgroundColor = hex(rgb); sw.textContent = ''; }
+    else { sw.classList.add('empty'); sw.style.backgroundColor = ''; sw.textContent = 'ยังไม่มีสี'; }
+    let total = 0;
+    document.querySelectorAll('.paint').forEach(el => {
+      const n = counts[el.dataset.id] || 0; total += n;
+      const c = el.querySelector('.cnt'); c.textContent = n; c.classList.toggle('zero', !n);
+      el.querySelector('.minus').disabled = !n;
+    });
+    $('dropcount').textContent = total ? `ใช้ไป ${total} หยด` : 'แตะที่สีเพื่อหยดลงจาน';
+  }
+  function updateLock() { $('mixarea').classList.toggle('locked', submitted); }
+
+  function renderMix() {
+    const s = state;
+    show('mix');
+    const key = s.code + ':' + s.round;
+    if (mixKey !== key) {
+      mixKey = key;
+      counts = { ...(s.myCounts || {}) }; history_ = []; submitted = !!s.mySubmitted;
+      $('sw-target').style.backgroundColor = hex(s.target.rgb);
+      totalMs = s.settings.time * 1000;
+      updateMix();
+    }
+    submitted = !!s.mySubmitted;
+    updateLock();
+    $('mix-round').textContent = roundLabel(s);
+    deadlineAt = s.remainingMs != null ? performance.now() + s.remainingMs : null;
+    $('timerbar').style.visibility = deadlineAt ? 'visible' : 'hidden';
+    if (!deadlineAt) $('mix-time').textContent = '∞';
+    $('chips').innerHTML = s.players.map(p =>
+      `<span class="chip ${p.submitted ? 'done' : ''} ${p.connected ? '' : 'off'}">${esc(p.name)}</span>`).join('');
+    $('btn-force').style.display = isHost() ? '' : 'none';
+  }
+  function tick() {
+    if (deadlineAt && state && state.phase === 'mixing') {
+      const left = Math.max(0, deadlineAt - performance.now());
+      const frac = totalMs ? left / totalMs : 0;
+      const bar = $('timerbar');
+      bar.firstElementChild.style.width = (frac * 100).toFixed(2) + '%';
+      bar.classList.toggle('warn', frac < 0.5 && frac >= 0.2);
+      bar.classList.toggle('danger', frac < 0.2);
+      $('mix-time').textContent = '⏱ ' + Math.ceil(left / 1000) + ' วิ';
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- reveal ----------
+  let revealKey = null;
+  function renderReveal() {
+    const s = state;
+    show('reveal');
+    const key = s.code + ':' + s.round;
+    const fresh = revealKey !== key;
+    revealKey = key;
+    $('rev-round').textContent = 'ผล' + roundLabel(s);
+    $('rev-target').style.backgroundColor = hex(s.target.rgb);
+    $('rev-recipe').innerHTML = recipeHTML(s.target.recipe);
+    const medal = r => ['🥇', '🥈', '🥉'][r - 1] || r;
+    $('results').innerHTML = s.results.map(r => `
+      <li>
+        <div class="rank">${medal(r.rank)}</div>
+        <div class="mini" style="background:${hex(s.target.rgb)}" title="ซ้าย: สีของ ${esc(r.name)} / ขวา: โจทย์">
+          <div class="half" style="background:${r.rgb ? hex(r.rgb) : '#fff'}"></div></div>
+        <div style="min-width:0">
+          <div class="rname">${esc(r.name)}${r.id === s.you ? ' (คุณ)' : ''} ${r.perfect ? '<span class="perfect">เป๊ะมาก! +3</span>' : ''}</div>
+          <div class="recipe" style="margin-top:4px">${recipeHTML(r.counts)}</div>
+          <div class="bar"><i data-w="${r.pct}"></i></div>
+        </div>
+        <div><div class="pct" data-pct="${r.pct}">${fresh ? '0.0' : r.pct.toFixed(1)}%</div><div class="pts">+${r.points} แต้ม</div></div>
+      </li>`).join('') || '<li class="muted">ไม่มีใครส่งคำตอบ</li>';
+    requestAnimationFrame(() => document.querySelectorAll('#results .bar > i').forEach(i => { i.style.width = i.dataset.w + '%'; }));
+    if (fresh) animatePct();
+    renderStandings($('standings'), s);
+    const host = isHost();
+    const last = s.settings.rounds && s.round >= s.settings.rounds;
+    $('btn-next').style.display = host ? '' : 'none';
+    $('btn-next').textContent = last ? 'ดูผลสรุป 🏆' : 'รอบต่อไป ➜';
+    $('btn-end').style.display = host && !last ? '' : 'none';
+    $('rev-wait').style.display = host ? 'none' : '';
+    const me = s.results.find(r => r.id === s.you);
+    if (fresh && me && me.rank === 1 && me.pct > 0) confetti();
+  }
+  function animatePct() {
+    const els = [...document.querySelectorAll('#results .pct')];
+    const t0 = performance.now(), dur = 1200;
+    (function step(t) {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      els.forEach(el => { el.textContent = (Number(el.dataset.pct) * e).toFixed(1) + '%'; });
+      if (k < 1) requestAnimationFrame(step);
+    })(t0);
+  }
+  function renderStandings(el, s) {
+    const list = [...s.players].sort((a, b) => b.score - a.score);
+    el.innerHTML = list.map((p, i) => `
+      <li class="${p.connected ? '' : 'off'}"><span class="rank" style="width:28px">${i + 1}</span>${avatar(p)}
+        <span class="pname">${esc(p.name)}${p.id === s.you ? ' (คุณ)' : ''}</span>
+        <span class="muted" style="font-size:13px">ชนะ ${p.wins} รอบ</span>
+        <span class="sc">${p.score}</span></li>`).join('');
+  }
+  $('btn-next').onclick = () => send({ type: 'next' });
+  $('btn-end').onclick = () => send({ type: 'end' });
+
+  // ---------- final ----------
+  let finalKey = null;
+  function renderFinal() {
+    const s = state;
+    show('final');
+    const list = [...s.players].sort((a, b) => b.score - a.score);
+    const order = [1, 0, 2].filter(i => list[i]);
+    $('podium').innerHTML = order.map(i => `
+      <div class="pod p${i + 1}">
+        ${i === 0 ? '<div class="crown">👑</div>' : ''}
+        <div class="who">${esc(list[i].name)}</div>
+        <div class="s">${list[i].score} แต้ม</div>
+        <div class="stand">${i + 1}</div>
+      </div>`).join('');
+    renderStandings($('final-list'), s);
+    const host = isHost();
+    $('btn-again').style.display = host ? '' : 'none';
+    $('btn-tolobby').style.display = host ? '' : 'none';
+    $('final-wait').style.display = host ? 'none' : '';
+    $('btn-leave2').textContent = host ? 'ปิดห้อง' : 'ออกจากห้อง';
+    const key = s.code + ':' + s.round;
+    if (finalKey !== key) { finalKey = key; confetti(); }
+  }
+  $('btn-again').onclick = () => send({ type: 'start' });
+  $('btn-tolobby').onclick = () => send({ type: 'lobby' });
+
+  function confetti() {
+    const cols = ['#ff5d73', '#ffb020', '#19b37a', '#5b6cff', '#a35bff', '#00a6c8'];
+    for (let i = 0; i < 80; i++) {
+      const c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = Math.random() * 100 + 'vw';
+      c.style.background = cols[i % cols.length];
+      c.style.animationDuration = 1.8 + Math.random() * 1.8 + 's';
+      c.style.animationDelay = Math.random() * 0.6 + 's';
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 4500);
+    }
+  }
+
+  resume();
+})();
+</script>
+</body>
+</html>
