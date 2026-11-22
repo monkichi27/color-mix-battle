@@ -299,7 +299,7 @@
   </section>
 </div>
 
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="color-engine.js"></script>
 <script src="room-core.js"></script>
 <script>
@@ -326,13 +326,17 @@
   const urlRoom = new URLSearchParams(location.search).get('room');
   if (urlRoom) $('joincode').value = urlRoom.toUpperCase().slice(0, 4);
 
-  // ---------- networking: PeerJS (WebRTC). The host's browser runs the room. ----------
-  const PEER_PREFIX = 'colormixbattle-v1-';
-  const peerIdOf = code => PEER_PREFIX + code;
-  const NET_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed', 'disconnected'];
-  let state = null, peer = null, core = null, conn = null, mode = null; // mode: 'host' | 'guest'
-  const conns = new Map(); // host: playerId -> DataConnection
-  let guestRetry = null, everConnected = false, lastHostMsg = 0, wakeLock = null;
+  // ---------- networking: MQTT over WSS (public broker). The host's browser runs the room. ----------
+  // Every device connects *out* to the broker, so it works on any network (mobile CGNAT included).
+  // topics: <base>/h      guests → host   {from, msg}
+  //         <base>/p/<id> host → one guest
+  //         <base>/alive  retained heartbeat of the host (room exists?)
+  const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://test.mosquitto.org:8081'];
+  const TOPIC = code => 'colormixbattle/v1/' + code;
+  const ALIVE_MAX_AGE = 3 * 60 * 1000;
+  let state = null, client = null, core = null, mode = null, base = null, gen = 0; // mode: 'host' | 'guest'
+  const conns = new Map(); // host: playerId -> last time we heard from them
+  let lastHostMsg = 0, aliveTimer = null, wakeLock = null;
 
   function setConn(on, text) { $('conn').textContent = text || 'กำลังเชื่อมต่อ…'; $('conn').classList.toggle('show', !!on); }
   function newCode() {
@@ -342,28 +346,62 @@
   function loadSaved() {
     try {
       const s = JSON.parse(store.get('cmb.hostRoom', 'null'));
-      if (s && Date.now() - s.savedAt < 6 * 3600 * 1000) return s.room;
+      if (s && s.room && Date.now() - s.savedAt < 6 * 3600 * 1000) return s;
     } catch {}
     return null;
   }
   function persist() {
     if (!core) return;
     if (core.closed) { store.set('cmb.hostRoom', null); return; }
-    store.set('cmb.hostRoom', JSON.stringify({ savedAt: Date.now(), room: core.serialize() }));
+    store.set('cmb.hostRoom', JSON.stringify({ savedAt: Date.now(), broker: client ? client.__broker : 0, room: core.serialize() }));
   }
+
+  function tryConnect(idx) {
+    return new Promise(resolve => {
+      let c;
+      try {
+        c = mqtt.connect(BROKERS[idx], {
+          clientId: 'cmb_' + Math.random().toString(36).slice(2, 12),
+          keepalive: 20, reconnectPeriod: 2000, connectTimeout: 7000, clean: true,
+        });
+      } catch { return resolve(null); }
+      c.__broker = idx;
+      const fail = () => { try { c.end(true); } catch {} ; resolve(null); };
+      const t = setTimeout(fail, 8000);
+      c.once('connect', () => { clearTimeout(t); resolve(c); });
+      c.on('error', () => {});
+    });
+  }
+  function readAlive(c, code) {
+    return new Promise(resolve => {
+      const topic = TOPIC(code) + '/alive';
+      const onMsg = (t, payload) => {
+        if (t !== topic) return;
+        finish(payload && payload.length ? (() => { try { return JSON.parse(payload); } catch { return null; } })() : null);
+      };
+      const finish = v => { clearTimeout(timer); c.removeListener('message', onMsg); c.unsubscribe(topic); resolve(v); };
+      const timer = setTimeout(() => finish(null), 1500);
+      c.on('message', onMsg);
+      c.subscribe(topic);
+    });
+  }
+  const pub = (topic, obj, opts) => { if (client) client.publish(topic, JSON.stringify(obj), opts || {}); };
+
   function teardown() {
-    clearTimeout(guestRetry);
+    gen++;
+    clearInterval(aliveTimer); aliveTimer = null;
     if (core) core.destroy();
     core = null;
-    for (const c of conns.values()) { try { c.close(); } catch {} }
     conns.clear();
-    if (conn) { const c = conn; conn = null; try { c.close(); } catch {} }
-    if (peer) { try { peer.destroy(); } catch {} }
-    peer = null; mode = null;
+    if (client) { const c = client; client = null; try { c.end(false); } catch {} }
+    mode = null; base = null;
     setConn(false);
   }
   function goHome(msg) {
-    if (mode === 'host') store.set('cmb.hostRoom', null);
+    if (mode === 'host') {
+      store.set('cmb.hostRoom', null);
+      if (client && base) client.publish(base + '/alive', '', { retain: true }); // room no longer exists
+    }
     teardown();
     store.set('cmb.session', null);
     state = null;
@@ -371,10 +409,9 @@
     show('home');
     history.replaceState(null, '', location.pathname);
   }
-  function keepBrokerAlive() {
-    peer.on('disconnected', () => {
-      setTimeout(() => { if (peer && !peer.destroyed && peer.disconnected) { try { peer.reconnect(); } catch {} } }, 1500);
-    });
+  function watchClient(c) {
+    c.on('offline', () => setConn(true, 'เน็ตหลุด กำลังเชื่อมต่อใหม่…'));
+    c.on('reconnect', () => setConn(true, 'เน็ตหลุด กำลังเชื่อมต่อใหม่…'));
   }
   async function requestWakeLock() {
     try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
@@ -382,141 +419,126 @@
   document.addEventListener('visibilitychange', () => { if (mode === 'host') requestWakeLock(); });
 
   // ----- host -----
-  function hostRoom(name, restoring, attempt = 0) {
+  async function hostRoom(name, restoring) {
     teardown();
     mode = 'host';
+    const my = gen;
     const saved = restoring ? loadSaved() : null;
     if (restoring && !saved) return goHome();
-    const code = saved ? saved.code : newCode();
     setConn(true, restoring ? 'กำลังเปิดห้องเดิม…' : 'กำลังเปิดห้อง…');
-    const p = peer = new Peer(peerIdOf(code));
-    keepBrokerAlive();
-    p.on('open', () => {
-      if (peer !== p) return;
-      setConn(false);
-      core = RoomCore.create({ code, hostId: playerId, engine: E, emit: hostEmit, onChange: persist }, saved);
-      store.set('cmb.session', JSON.stringify({ role: 'host', code }));
-      core.attach(playerId, name);
-      requestWakeLock();
+    const order = saved ? [saved.broker || 0] : BROKERS.map((_, i) => i);
+    let c = null;
+    for (const idx of order) { c = await tryConnect(idx); if (c || my !== gen) break; }
+    if (my !== gen) { if (c) c.end(true); return; }
+    if (!c) return goHome('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองเช็กเน็ตแล้วลองใหม่');
+    client = c;
+    let code = saved ? saved.room.code : null;
+    for (let i = 0; !code && i < 6; i++) {
+      const cand = newCode();
+      const alive = await readAlive(c, cand);
+      if (!alive || Date.now() - alive.t > ALIVE_MAX_AGE) code = cand;
+    }
+    if (my !== gen) return;
+    if (!code) return goHome('สร้างห้องไม่สำเร็จ ลองใหม่อีกครั้ง');
+    base = TOPIC(code);
+    c.on('message', (topic, payload) => {
+      if (topic !== base + '/h') return;
+      let m; try { m = JSON.parse(payload); } catch { return; }
+      if (m && typeof m.from === 'string' && m.msg && typeof m.msg === 'object') hostReceive(m.from.slice(0, 40), m.msg);
     });
-    p.on('connection', wireGuest);
-    p.on('error', err => {
-      if (peer !== p) return;
-      if (err.type === 'unavailable-id') {
-        // fresh room: code clash → pick another. restored room: broker still holds the old id for a bit → retry
-        if (!restoring && attempt < 5) return hostRoom(name, false, attempt + 1);
-        if (restoring && attempt < 15) { setConn(true, 'กำลังเปิดห้องเดิม… (รอสักครู่)'); try { p.destroy(); } catch {} ; return setTimeout(() => mode === 'host' && hostRoom(name, true, attempt + 1), 2000); }
-        return goHome('เปิดห้องไม่สำเร็จ ลองสร้างห้องใหม่');
-      }
-      if (NET_ERRORS.includes(err.type)) setConn(true, 'เน็ตมีปัญหา กำลังเชื่อมต่อใหม่…');
-      else if (err.type === 'browser-incompatible') goHome('เบราว์เซอร์นี้ไม่รองรับ ลองใช้ Chrome หรือ Safari');
-    });
+    c.subscribe(base + '/h', { qos: 1 });
+    watchClient(c);
+    c.on('connect', () => { setConn(false); publishAlive(); });
+    core = RoomCore.create({ code, hostId: playerId, engine: E, emit: hostEmit, onChange: persist }, saved ? saved.room : null);
+    store.set('cmb.session', JSON.stringify({ role: 'host', code }));
+    publishAlive();
+    aliveTimer = setInterval(publishAlive, 10000);
+    setConn(false);
+    core.attach(playerId, name);
+    if (saved) for (const p of saved.room.players) if (p.id !== playerId) hostEmit(p.id, { type: 'rejoin' }); // call everyone back now
+    requestWakeLock();
   }
+  function publishAlive() { if (base) pub(base + '/alive', { t: Date.now(), host: playerId }, { retain: true }); }
   function hostEmit(pid, msg) {
     if (pid === playerId) { setTimeout(() => onMessage(msg)); return; }
-    const c = conns.get(pid);
-    if (c && c.open) { try { c.send(msg); } catch {} }
-    if (msg.type === 'kicked' && c) setTimeout(() => { try { c.close(); } catch {} }, 500);
+    if (base) pub(base + '/p/' + pid, msg, { qos: msg.type === 'state' || msg.type === 'ping' ? 0 : 1 });
   }
-  function wireGuest(c) {
-    c.__last = Date.now();
-    c.on('data', msg => {
-      c.__last = Date.now();
-      if (!core || !msg || typeof msg !== 'object') return;
-      if (msg.type === 'pong') return;
-      if (msg.type === 'join') {
-        const pid = String(msg.playerId || '').slice(0, 40);
-        if (!pid || pid === playerId) return;
-        const old = conns.get(pid);
-        if (old && old !== c) { old.__replaced = true; try { old.close(); } catch {} }
-        c.__pid = pid;
-        conns.set(pid, c);
-        const err = core.attach(pid, msg.name);
-        if (err) { try { c.send({ type: 'error', message: err, fatal: true }); } catch {} ; conns.delete(pid); c.__pid = null; }
-        return;
-      }
-      if (c.__pid && conns.get(c.__pid) === c) core.handle(c.__pid, msg);
-    });
-    c.on('close', () => dropGuest(c));
-    c.on('error', () => {});
-  }
-  function dropGuest(c) {
-    if (c.__pid && conns.get(c.__pid) === c) {
-      conns.delete(c.__pid);
-      if (core) core.detach(c.__pid);
+  function hostReceive(pid, msg) {
+    if (!core || pid === playerId) return;
+    if (msg.type === 'join') {
+      conns.set(pid, Date.now());
+      const err = core.attach(pid, msg.name);
+      if (err) { conns.delete(pid); hostEmit(pid, { type: 'error', message: err, fatal: true }); }
+      return;
     }
+    if (!conns.has(pid)) { hostEmit(pid, { type: 'rejoin' }); return; } // we dropped them; ask them to join again
+    conns.set(pid, Date.now());
+    if (msg.type !== 'pong') core.handle(pid, msg);
   }
-  setInterval(() => { // heartbeat: host pings guests; guests watch for silence
-    const now = Date.now();
-    if (mode === 'host') {
-      for (const c of [...conns.values()]) {
-        if (now - c.__last > 15000) { dropGuest(c); try { c.close(); } catch {} ; continue; }
-        if (c.open) { try { c.send({ type: 'ping' }); } catch {} }
-      }
-    } else if (mode === 'guest' && conn && conn.open && now - lastHostMsg > 15000) {
-      setConn(true, 'ไม่ได้ยินเสียงโฮสต์ กำลังเชื่อมต่อใหม่…');
-      const s = JSON.parse(store.get('cmb.session', 'null') || 'null');
-      if (s) scheduleGuestRetry(s.code, myName(), 0);
-    }
-  }, 4000);
 
   // ----- guest -----
-  function joinRoom(code, name) {
+  async function joinRoom(code, name) {
     teardown();
     mode = 'guest';
-    everConnected = false;
+    const my = gen;
     store.set('cmb.session', JSON.stringify({ role: 'guest', code }));
     setConn(true, `กำลังเข้าห้อง ${code}…`);
-    const p = peer = new Peer();
-    keepBrokerAlive();
-    p.on('open', () => { if (peer === p) connectToHost(code, name); });
-    p.on('error', err => {
-      if (peer !== p) return;
-      if (err.type === 'peer-unavailable') {
-        if (!everConnected) goHome(`ไม่พบห้อง ${code} (รหัสผิด หรือโฮสต์ปิดห้องแล้ว)`);
-        else { setConn(true, 'โฮสต์หลุด รอโฮสต์กลับมา…'); scheduleGuestRetry(code, name, 3000); }
-      } else if (NET_ERRORS.includes(err.type)) {
-        setConn(true, 'เน็ตหลุด กำลังเชื่อมต่อใหม่…');
-        scheduleGuestRetry(code, name, 2000);
-      } else if (err.type === 'browser-incompatible') goHome('เบราว์เซอร์นี้ไม่รองรับ ลองใช้ Chrome หรือ Safari');
-    });
+    let reached = false;
+    for (let idx = 0; idx < BROKERS.length; idx++) {
+      const c = await tryConnect(idx);
+      if (my !== gen) { if (c) c.end(true); return; }
+      if (!c) continue;
+      reached = true;
+      const alive = await readAlive(c, code);
+      if (my !== gen) { c.end(true); return; }
+      if (alive && Date.now() - alive.t < ALIVE_MAX_AGE) return attachGuest(c, code, name);
+      c.end(true);
+    }
+    goHome(reached ? `ไม่พบห้อง ${code} (รหัสผิด หรือโฮสต์ปิดห้องแล้ว)` : 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองเช็กเน็ตแล้วลองใหม่');
   }
-  function connectToHost(code, name) {
-    if (mode !== 'guest' || !peer || peer.destroyed) return;
-    if (peer.disconnected) { try { peer.reconnect(); } catch {} ; return scheduleGuestRetry(code, name, 1500); }
-    const c = conn = peer.connect(peerIdOf(code), { reliable: true });
-    let opened = false;
-    const openTimer = setTimeout(() => { if (!opened && conn === c) scheduleGuestRetry(code, name, 0); }, 12000);
-    c.on('open', () => {
-      opened = true; clearTimeout(openTimer);
-      everConnected = true; lastHostMsg = Date.now();
-      setConn(false);
-      c.send({ type: 'join', code, name, playerId });
-    });
-    c.on('data', m => {
-      lastHostMsg = Date.now();
+  function attachGuest(c, code, name) {
+    client = c;
+    base = TOPIC(code);
+    const mine = base + '/p/' + playerId;
+    c.on('message', (topic, payload) => {
+      if (topic !== mine) return;
+      let m; try { m = JSON.parse(payload); } catch { return; }
       if (!m || typeof m !== 'object') return;
-      if (m.type === 'ping') { try { c.send({ type: 'pong' }); } catch {} ; return; }
+      lastHostMsg = Date.now();
+      if ($('conn').classList.contains('show') && client && client.connected) setConn(false);
+      if (m.type === 'ping') return guestSend({ type: 'pong' });
+      if (m.type === 'rejoin') return guestSend({ type: 'join', code, name: myName() });
       onMessage(m);
     });
-    c.on('close', () => {
-      if (conn === c && mode === 'guest') { setConn(true, 'หลุดจากห้อง กำลังเชื่อมต่อใหม่…'); scheduleGuestRetry(code, name, 2000); }
-    });
-    c.on('error', () => {});
+    c.subscribe(mine, { qos: 1 });
+    watchClient(c);
+    c.on('connect', () => guestSend({ type: 'join', code, name: myName() })); // after a reconnect
+    lastHostMsg = Date.now();
+    guestSend({ type: 'join', code, name });
   }
-  function scheduleGuestRetry(code, name, delay) {
-    clearTimeout(guestRetry);
-    guestRetry = setTimeout(() => {
-      if (mode !== 'guest') return;
-      if (conn) { const old = conn; conn = null; try { old.close(); } catch {} }
-      connectToHost(code, name);
-    }, delay);
+  function guestSend(msg) {
+    msg.playerId = playerId;
+    if (client && base) pub(base + '/h', { from: playerId, msg }, { qos: msg.type === 'draft' || msg.type === 'pong' ? 0 : 1 });
   }
+
+  setInterval(() => { // heartbeat: host pings guests and drops silent ones; guests watch for a silent host
+    const now = Date.now();
+    if (mode === 'host' && core) {
+      for (const [pid, last] of [...conns]) {
+        if (now - last > 15000) { conns.delete(pid); core.detach(pid); }
+        else hostEmit(pid, { type: 'ping' });
+      }
+    } else if (mode === 'guest' && client && now - lastHostMsg > 15000) {
+      setConn(true, 'ไม่ได้ยินเสียงโฮสต์ รอโฮสต์กลับมา…');
+      const s = JSON.parse(store.get('cmb.session', 'null') || 'null');
+      if (s) guestSend({ type: 'join', code: s.code, name: myName() });
+    }
+  }, 4000);
 
   function send(msg) {
     msg.playerId = playerId;
     if (mode === 'host' && core) setTimeout(() => core && core.handle(playerId, msg));
-    else if (mode === 'guest' && conn && conn.open) { try { conn.send(msg); } catch {} }
+    else if (mode === 'guest') guestSend(msg);
   }
   function myName() { return $('name').value.trim() || store.get('cmb.name', '') || 'ผู้เล่น'; }
 
@@ -695,8 +717,11 @@
       $('sw-target').style.backgroundColor = hex(s.target.rgb);
       totalMs = s.settings.time * 1000;
       updateMix();
+    } else if (mode === 'guest') {
+      // the host's view lags behind ours (or a message was lost on a flaky network) → re-send what we intend
+      if (submitted && !s.mySubmitted) send({ type: 'submit', counts });
+      else if (!submitted && JSON.stringify(counts) !== JSON.stringify(s.myCounts || {})) queueDraft();
     }
-    submitted = !!s.mySubmitted;
     updateLock();
     $('mix-round').textContent = roundLabel(s);
     deadlineAt = s.remainingMs != null ? performance.now() + s.remainingMs : null;
